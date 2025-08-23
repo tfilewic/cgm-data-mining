@@ -1,0 +1,4 @@
+*.pdf
+.~lock.CGMData.csv#
+.~lock.InsulinData.csv#
+Result.csv
