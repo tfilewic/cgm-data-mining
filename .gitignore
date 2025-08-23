@@ -1,4 +1,3 @@
 *.pdf
-.~lock.CGMData.csv#
-.~lock.InsulinData.csv#
+.~lock.*
 Result.csv
