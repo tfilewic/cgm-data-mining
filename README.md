@@ -1,4 +1,4 @@
-# Extracting Time‑Series Properties of Glucose (CGM/Insulin)
+# Glucose Time Series Analysis
 Extracts performance metrics of an Artificial Pancreas system from
 sensor data.
 
@@ -22,5 +22,6 @@ This project implements a data processing and analysis workflow for continuous g
 ## to Run:
     ```bash
     python3 main.py
+
 
 Reads *CGMData.csv* and *InsulinData.csv* from root folder; exports results to *Results.csv*
