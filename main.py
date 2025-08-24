@@ -111,11 +111,11 @@ insulin = import_file(INSULIN_DATA_PATH)
 create_timestamps(cgm)
 create_timestamps(insulin)
 
-#discretize glucose readings into boolean categories
-discretize_glucose(cgm)
-
 #interpolate missing values
 interpolate_glucose(cgm)
+
+#discretize glucose readings into boolean categories
+discretize_glucose(cgm)
 
 #feature subset selection for insulin
 select_features(INSULIN_SUBSET, insulin)
