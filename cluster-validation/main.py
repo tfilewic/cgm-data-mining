@@ -1,8 +1,9 @@
-#tfilewic  2025-09-24
+#tfilewic  2025-09-25
 from sklearn.cluster import KMeans, DBSCAN
 import pandas as pd
 import numpy as np
 import sys
+from sklearn.preprocessing import StandardScaler
 
 CGM_DATA_PATH = "CGMData.csv"
 INSULIN_DATA_PATH = "InsulinData.csv"
@@ -61,43 +62,18 @@ def get_meals(df: pd.DataFrame) -> pd.DataFrame:
 
     return meals
 
-def get_nomeals(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    calculates start times of eligible postabsorptive windows
-    """
-    meals = df.copy()
-
-    #drop NaNs
-    meals.dropna(subset=["BWZ Carb Input (grams)"], inplace=True)
-
-    #drop 0s
-    meals.drop(meals[meals["BWZ Carb Input (grams)"] == 0].index, inplace=True)
-
-    nomeals = []
-    for this_meal, next_meal in zip(meals["Timestamp"], meals["Timestamp"].shift(1)):
-        
-        #skip first row edge case
-        if pd.isna(next_meal): 
-            continue
-            
-        start = this_meal + pd.Timedelta("2h")
-        end = next_meal - pd.Timedelta("2h")
-
-        while (start < end):
-            nomeals.append(start)
-            start += pd.Timedelta("2h")
-
-    return pd.DataFrame({"Timestamp": nomeals})
-  
-
-def build_meal_matrix(meals: pd.DataFrame, cgm: pd.DataFrame) -> np.array:
+def build_meal_matrix(meals: pd.DataFrame, cgm: pd.DataFrame) -> tuple[np.array, np.array]:
     """
     builds 30 sample absorptive windows from meal times 
     """
     THRESHOLD = 2
     matrix = []
+    labels = []
 
-    for meal in meals["Timestamp"]:
+    for _, row in meals.iterrows():
+        meal = row["Timestamp"]
+        carb_val = row["BWZ Carb Input (grams)"]
+
         window = cgm[(cgm["Timestamp"] >= meal - pd.Timedelta("30min")) &
                      (cgm["Timestamp"] <= meal + pd.Timedelta("2h"))]
 
@@ -119,49 +95,19 @@ def build_meal_matrix(meals: pd.DataFrame, cgm: pd.DataFrame) -> np.array:
 
         #insert row
         matrix.append(values)
+        labels.append(carb_val)
 
-    return np.array(matrix, dtype=float)
-
-def build_nomeal_matrix(nomeals: pd.DataFrame, cgm: pd.DataFrame) -> np.array:
-    """
-    builds 24 sample postabsorptive windows from nomeal times 
-    """
-    THRESHOLD = 2
-    matrix = []
-
-    for nomeal in nomeals["Timestamp"]:
-        window = cgm[(cgm["Timestamp"] >= nomeal) &
-                     (cgm["Timestamp"] <= nomeal + pd.Timedelta("2h"))]
-
-        values = window["Sensor Glucose (mg/dL)"].to_numpy()
-
-        #skip windows that dont have 24 pts
-        if len(values) != 24:
-            continue
-        
-        #discard if missing data points exceed threshold
-        missing = np.isnan(values).sum()
-        if missing > THRESHOLD:
-            continue
-        
-        #fill missing
-        if missing > 0:
-            series = pd.Series(values)
-            values = series.interpolate(limit_direction="both").to_numpy()
-
-        #insert row
-        matrix.append(values)
-
-    return np.array(matrix, dtype=float)
+    return np.array(matrix, dtype=float), np.array(labels, dtype=float)
 
 
 
-''' PREPROCESSING '''
+''' IMPORT FILES '''
 #import insulin data
 cgm = import_file(CGM_DATA_PATH)
 insulin = import_file(INSULIN_DATA_PATH)
 
-#create timestamps
+
+''' BUILD MATRIX '''
 create_timestamps(cgm)
 create_timestamps(insulin)
 
@@ -169,18 +115,47 @@ select_features(CGM_FEATURES, cgm)
 select_features(INSULIN_FEATURES, insulin)
 
 meals = get_meals(insulin)
-nomeals = get_nomeals(insulin)
 
-print(meals)
+meal_matrix, carb_labels = build_meal_matrix(meals, cgm)
+ 
+''' BUILD BINS '''
+minimum = carb_labels.min()
+maximum = carb_labels.max()
+bins = np.floor((carb_labels - minimum) / 20).astype(int)
+bin_count = bins.max() + 1
 
-meal_matrix = build_meal_matrix(meals, cgm)
-nomeal_matrix = build_nomeal_matrix(nomeals, cgm)
-#p2 meal matrix   PxF
+''' SCALE FEATURES '''
+scaler = StandardScaler()
+X = scaler.fit_transform(meal_matrix)
+
+
+''' CLUSTERING '''
+#k-means
+km = KMeans(n_clusters=bin_count, n_init=50, random_state=0)
+km_predictions = km.fit_predict(X)
+
+#db scan
+db = DBSCAN(eps=1.6, min_samples=5)
+db_predictions = db.fit_predict(X)
 
 
 
 
-#print(meal_matrix)
+
+
+
+
+print("BINS")
+print(bins)
+print()
+print("km_predictions")
+print(km_predictions)
+print()
+print("db_predictions")
+print(db_predictions)
+print(len(bins) == len(km_predictions) == len(db_predictions) == meal_matrix.shape[0])
+print(bins.min() == 0, bins.max() == 5)
+print(set(db_predictions))
 # min/max carb 
 # split into n bins - bin sz 20 grams, create bins (mincarb to min+20, min+21 to min+40, .... to maxcarb)
 # Px1 bin matrix  is ground truth
